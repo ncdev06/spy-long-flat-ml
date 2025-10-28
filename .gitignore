@@ -1,0 +1,17 @@
+# Jupyter auto-saves
+.ipynb_checkpoints/
+
+# Local data / finance data dumps
+data/
+*.csv
+*.parquet
+*.pkl
+
+# Virtual environments / secrets
+venv/
+.env/
+*.env
+
+# OS / editor noise
+.DS_Store
+*.swp
