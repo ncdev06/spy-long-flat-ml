@@ -1,0 +1,7 @@
+numpy>=2.0,<3
+pandas>=2.2,<3
+scikit-learn>=1.5,<2
+matplotlib>=3.9,<4
+ta>=0.11,<1
+yahooquery>=2.3,<3
+jupyter>=1.1,<2
