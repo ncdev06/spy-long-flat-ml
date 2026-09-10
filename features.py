@@ -1,49 +1,81 @@
-#!/usr/bin/env python
-# coding: utf-8
+from __future__ import annotations
 
-# In[2]:
-
-
-import pandas as pd
 import numpy as np
+import pandas as pd
 import ta
 
 
-# In[3]:
+FEATURE_COLUMNS = [
+    "ret1",
+    "logret1",
+    "mom5",
+    "mom20",
+    "close_sma5",
+    "close_sma20",
+    "close_ema12",
+    "close_ema26",
+    "rsi14",
+    "atr_pct14",
+    "vol20",
+    "volume_z20",
+]
 
 
-def make_features(df: pd.DataFrame):
-    out = df.copy()
-    out['ret1'] = out['close'].pct_change()
-    out['logret1'] = np.log1p(out['ret1'])
+def make_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Create stationary-ish features available at the close of each date.
 
-    out['sma5'] = out['close'].rolling(5).mean()
-    out['sma20'] = out['close'].rolling(20).mean()
-    out['ema12'] = out['close'].ewm(span=12, adjust=False).mean()
-    out['ema26'] = out['close'].ewm(span=26, adjust=False).mean()
+    Each row's label represents the direction of the *next* close-to-close return.
+    The final row is removed because its future return is unknown. The backtester
+    applies each prediction to the following bar, so features do not need an extra
+    one-day shift here.
+    """
+    out = df.copy().sort_index()
 
-    out['rsi14'] = ta.momentum.rsi(out['close'], window=14)
+    close = out["close"].astype(float)
+    volume = out["volume"].astype(float)
 
-    high, low, close = out['high'], out['low'], out['close']
-    out['atr14'] = ta.volatility.average_true_range(high, low, close, window=14)
-    out['ret_std20'] = out['logret1'].rolling(20).std()
+    out["ret1"] = close.pct_change()
+    out["logret1"] = np.log(close).diff()
+    out["mom5"] = close.pct_change(5)
+    out["mom20"] = close.pct_change(20)
 
-    out['close_sma5'] = out['close'] / out['sma5'] - 1.0
-    out['close_sma20'] = out['close'] / out['sma20'] - 1.0
+    sma5 = close.rolling(5).mean()
+    sma20 = close.rolling(20).mean()
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
 
-    out['label'] = (out['close'].shift(-1) > out['close']).astype(int)
+    out["close_sma5"] = close / sma5 - 1.0
+    out["close_sma20"] = close / sma20 - 1.0
+    out["close_ema12"] = close / ema12 - 1.0
+    out["close_ema26"] = close / ema26 - 1.0
 
-    out = out.dropna().copy()
+    out["rsi14"] = ta.momentum.rsi(close, window=14) / 100.0
+    atr14 = ta.volatility.average_true_range(
+        out["high"].astype(float),
+        out["low"].astype(float),
+        close,
+        window=14,
+    )
+    out["atr_pct14"] = atr14 / close
+    out["vol20"] = out["logret1"].rolling(20).std() * np.sqrt(252)
 
-    feature_cols = [c for c in out.columns if c not in ['label']]
-    out[feature_cols] = out[feature_cols].shift(1)
-    out = out.dropna().copy()
+    volume_mean = volume.rolling(20).mean()
+    volume_std = volume.rolling(20).std()
+    out["volume_z20"] = (volume - volume_mean) / volume_std.replace(0, np.nan)
 
-    return out
+    future_return = close.shift(-1) / close - 1.0
+    out["label"] = np.where(
+        future_return.notna(),
+        (future_return > 0).astype(int),
+        np.nan,
+    )
 
+    result = (
+        out[FEATURE_COLUMNS + ["label"]]
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+        .copy()
+    )
+    result["label"] = result["label"].astype(int)
 
-# In[ ]:
-
-
-
-
+    return result
